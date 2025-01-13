@@ -1,6 +1,7 @@
 import torch
 import triton
 import triton.language as tl
+
 from .base import MatrixBackend
 
 
@@ -56,70 +57,65 @@ def matmul_kernel(
     tl.store(c_ptrs, c, mask=c_mask)
 
 
-configs = [
-    triton.Config(
-        {
-            "BLOCK_SIZE_M": 128,
-            "BLOCK_SIZE_N": 256,
-            "BLOCK_SIZE_K": 64,
-            "GROUP_SIZE_M": 8,
-        },
-        num_stages=3,
-        num_warps=8,
-    ),
-    triton.Config(
-        {"BLOCK_SIZE_M": 64, "BLOCK_SIZE_N": 256, "BLOCK_SIZE_K": 32, "GROUP_SIZE_M": 8},
-        num_stages=4,
-        num_warps=4,
-    ),
-    triton.Config(
-        {
-            "BLOCK_SIZE_M": 128,
-            "BLOCK_SIZE_N": 128,
-            "BLOCK_SIZE_K": 32,
-            "GROUP_SIZE_M": 8,
-        },
-        num_stages=4,
-        num_warps=4,
-    ),
-]
+class MatmulKernel:
+    def __init__(self):
+        self.kernel = matmul_kernel
+        # Use a single optimized config instead of multiple configs
+        self.config = triton.Config(
+            {
+                "BLOCK_SIZE_M": 128,
+                "BLOCK_SIZE_N": 256,
+                "BLOCK_SIZE_K": 64,
+                "GROUP_SIZE_M": 8,
+            },
+            num_stages=3,
+            num_warps=8,
+        )
+
+    def __call__(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+        # Create output tensor
+        M, K = a.shape
+        _, N = b.shape
+        c = torch.empty((M, N), device=a.device, dtype=a.dtype)
+
+        # Compute grid size
+        grid = (triton.cdiv(M, 32) * triton.cdiv(N, 32),)
+
+        # Run kernel with fixed config
+        self.kernel.run(
+            a.data_ptr(),
+            b.data_ptr(),
+            c.data_ptr(),
+            M,
+            N,
+            K,
+            a.stride(0),
+            a.stride(1),
+            b.stride(0),
+            b.stride(1),
+            c.stride(0),
+            c.stride(1),
+            grid=grid,
+            **self.config.kwargs,
+        )
+        return c
 
 
-@triton.autotune(configs=configs, key=["M", "N", "K"])
-def triton_matmul(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    M, K = a.shape
-    _, N = b.shape
-    c = torch.empty((M, N), device=a.device, dtype=a.dtype)
-    grid = lambda META: (
-        triton.cdiv(M, META["BLOCK_SIZE_M"]) * triton.cdiv(N, META["BLOCK_SIZE_N"]),
-    )
-    matmul_kernel[grid](
-        a,
-        b,
-        c,
-        M,
-        N,
-        K,
-        a.stride(0),
-        a.stride(1),
-        b.stride(0),
-        b.stride(1),
-        c.stride(0),
-        c.stride(1),
-    )
-    return c
+# Create a global kernel instance
+_matmul = MatmulKernel()
 
 
 class TritonBackend(MatrixBackend[torch.Tensor]):
     @staticmethod
     def generate_matrix(
-        rows: int,
-        cols: int,
-        device: str,
-        dtype: torch.dtype,
+        rows: int, cols: int, device: str, dtype: torch.dtype, *_, **__
     ) -> torch.Tensor:
+        if device != "cuda":
+            raise RuntimeError("TritonBackend requires CUDA device")
         return torch.randn(rows, cols, device=device, dtype=dtype)
 
     @staticmethod
     def multiply_matrices(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        return triton_matmul(a, b)
+        if not (a.is_cuda and b.is_cuda):
+            raise RuntimeError("TritonBackend requires CUDA tensors")
+        return _matmul(a, b)

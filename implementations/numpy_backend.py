@@ -1,11 +1,12 @@
 import numpy as np
 from numpy.typing import NDArray
+
 from .base import MatrixBackend
 
 
 class NumpyBackend(MatrixBackend[NDArray]):
     @staticmethod
-    def generate_matrix(rows: int, cols: int) -> NDArray:
+    def generate_matrix(rows: int, cols: int, *_, **__) -> NDArray:
         return np.random.randn(rows, cols)
 
     @staticmethod
