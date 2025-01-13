@@ -1,8 +1,18 @@
+import json
+
+import pandas as pd
 import torch
 import triton
 import triton.testing
 
 from implementations import BACKENDS, MatrixBackend
+from plot import create_3d_plot
+
+with open("matrix_specs.json", "r") as f:
+    # real-world (M, N, K) shapes for Llama 70B production training
+    # https://semianalysis.com/2024/12/22/mi300x-vs-h100-vs-h200-benchmark-part-1-training/#general-matrix-multiply-gemm-performance
+    # https://github.com/pytorch-labs/float8_experimental/blob/main/benchmarks/bench_matmul.py#L58
+    MATRIX_SHAPES = json.load(f)
 
 
 def get_device():
@@ -14,44 +24,10 @@ def get_device():
     return "cpu"
 
 
-# https://semianalysis.com/2024/12/22/mi300x-vs-h100-vs-h200-benchmark-part-1-training/#general-matrix-multiply-gemm-performance
-MATRIX_SPECS = [
-    {
-        "M": 16384,
-        "N": 8192,
-        "K": 1280,
-        "note": "Fused QKV Projection GEMM shape",
-    },
-    {
-        "M": 16384,
-        "N": 1024,
-        "K": 8192,
-        "note": "Attention Output Projection shape",
-    },
-    {
-        "M": 16384,
-        "N": 8192,
-        "K": 7168,
-        "note": "FFN GEMM shape",
-    },
-    {
-        "M": 16384,
-        "N": 3584,
-        "K": 8192,
-        "note": "FFN GEMM shape",
-    },
-    {
-        "M": 8192,
-        "N": 8192,
-        "K": 8192,
-        "note": "Standard GEMM shape for benchmarking",
-    },
-]
-
 configs = [
     triton.testing.Benchmark(
-        x_names=["M", "N", "K", "dtype"],
-        x_vals=[(c["M"], c["N"], c["K"]) for c in MATRIX_SPECS],
+        x_names=["M", "N", "K"],
+        x_vals=[(c["M"], c["N"], c["K"]) for c in MATRIX_SHAPES],
         line_arg="backend",
         line_vals=BACKENDS.values(),
         line_names=list(BACKENDS.keys()),
@@ -113,6 +89,11 @@ def main():
         show_plots=False,
         save_path="results",
     )
+
+    results_df = pd.read_csv("results/matmul-tflops-comparison.csv")
+    fig = create_3d_plot(results_df)
+    fig.show()
+    fig.write_html("results/matmul-tflops-comparison-3d.html")
 
 
 if __name__ == "__main__":

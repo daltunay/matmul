@@ -1,0 +1,32 @@
+[
+  {
+    "M": 16384,
+    "N": 8192,
+    "K": 1280,
+    "note": "Fused QKV Projection GEMM shape"
+  },
+  {
+    "M": 16384,
+    "N": 1024,
+    "K": 8192,
+    "note": "Attention Output Projection shape"
+  },
+  {
+    "M": 16384,
+    "N": 8192,
+    "K": 7168,
+    "note": "FFN GEMM shape"
+  },
+  {
+    "M": 16384,
+    "N": 3584,
+    "K": 8192,
+    "note": "FFN GEMM shape"
+  },
+  {
+    "M": 8192,
+    "N": 8192,
+    "K": 8192,
+    "note": "Standard GEMM shape for benchmarking"
+  }
+]
