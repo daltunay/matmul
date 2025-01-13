@@ -1,0 +1,14 @@
+[project]
+name = "matmul"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=2.2.1",
+    "torch>=2.0.0",
+    "triton",
+]
+
+[tool.uv.sources]
+triton = { git = "https://github.com/triton-lang/triton", subdirectory = "python" }
