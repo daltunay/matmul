@@ -1,7 +1,3 @@
-import os
-
-os.environ["TRITON_INTERPRET"] = "1"
-
 import torch
 import triton
 import triton.testing
@@ -12,80 +8,111 @@ from implementations import BACKENDS, MatrixBackend
 def get_device():
     """Get the appropriate device for benchmarking."""
     if torch.cuda.is_available():
-        # Initialize CUDA device
         torch.cuda.init()
         return "cuda"
     print("WARNING: CUDA not available, falling back to CPU")
     return "cpu"
 
 
-def get_backend_name(backend_cls) -> str:
-    """Get a display name for the backend."""
-    return backend_cls.__name__.replace("Backend", "").lower()
-
+# https://semianalysis.com/2024/12/22/mi300x-vs-h100-vs-h200-benchmark-part-1-training/#general-matrix-multiply-gemm-performance
+MATRIX_SPECS = [
+    {
+        "M": 16384,
+        "N": 8192,
+        "K": 1280,
+        "note": "Fused QKV Projection GEMM shape",
+    },
+    {
+        "M": 16384,
+        "N": 1024,
+        "K": 8192,
+        "note": "Attention Output Projection shape",
+    },
+    {
+        "M": 16384,
+        "N": 8192,
+        "K": 7168,
+        "note": "FFN GEMM shape",
+    },
+    {
+        "M": 16384,
+        "N": 3584,
+        "K": 8192,
+        "note": "FFN GEMM shape",
+    },
+    {
+        "M": 8192,
+        "N": 8192,
+        "K": 8192,
+        "note": "Standard GEMM shape for benchmarking",
+    },
+]
 
 configs = [
     triton.testing.Benchmark(
-        x_names=["M", "N", "K"],  # Arguments for x-axis
-        x_vals=[
-            [128, 128, 128],  # You can modify these test sizes
-            [256, 256, 256],
-            [512, 512, 512],
-            # Add more size combinations as needed
-        ],
-        line_arg="backend",  # Argument name for different lines
-        line_vals=[get_backend_name(backend) for backend in BACKENDS.values()],
-        line_names=[get_backend_name(backend) for backend in BACKENDS.values()],
-        ylabel="TFLOPS",  # Label for y-axis
-        plot_name="matmul-performance-comparison",  # Plot name
-        args={},
+        x_names=["M", "N", "K", "dtype"],
+        x_vals=[(c["M"], c["N"], c["K"]) for c in MATRIX_SPECS],
+        line_arg="backend",
+        line_vals=BACKENDS.values(),
+        line_names=list(BACKENDS.keys()),
+        args=dict(device=get_device(), dtype=torch.float16),
+        plot_name="matmul-tflops-comparison",
+        xlabel="Matrix Shape",
+        ylabel="TFLOPS",
     )
 ]
 
 
 @triton.testing.perf_report(configs)
-def benchmark(M: int, N: int, K: int, backend: str):
+def benchmark(
+    backend: MatrixBackend,
+    M: int,
+    N: int,
+    K: int,
+    device: str,
+    dtype: torch.dtype,
+) -> float:
     """Benchmark function for matrix multiplication."""
-    device = get_device()
 
-    # Get the backend class
-    backend_cls: MatrixBackend = BACKENDS[backend]
-
-    # Initialize matrices using the backend's method
-    a = backend_cls.generate_matrix(
+    a = backend.generate_matrix(
         rows=M,
         cols=K,
         device=device,
-        dtype=torch.float16,
+        dtype=dtype,
     )
-    b = backend_cls.generate_matrix(
+    b = backend.generate_matrix(
         rows=K,
         cols=N,
         device=device,
-        dtype=torch.float16,
+        dtype=dtype,
     )
 
-    # Warm up
-    backend_cls.multiply_matrices(a, b)
-
-    # Benchmark with multiple iterations
-    quantiles = [0.5, 0.2, 0.8]
-    ms, min_ms, max_ms = triton.testing.do_bench(
-        lambda: backend_cls.multiply_matrices(a, b), quantiles=quantiles
+    time_ms = triton.testing.do_bench(
+        fn=lambda: backend.multiply_matrices(a, b),
+        warmup=25,
+        rep=100,
+        grad_to_none=None,
+        quantiles=None,
+        fast_flush=True,
+        return_mode="median",
+        device_type=device,
     )
 
-    # Calculate TFLOPS (2 operations per multiply-add)
-    def perf(ms):
-        return 2 * M * N * K * 1e-12 / (ms * 1e-3)
+    tflops = 2 * M * N * K * 1e-12 / (time_ms * 1e-3)
 
-    return perf(ms), perf(max_ms), perf(min_ms)
+    return tflops
 
 
 def main():
     if not torch.cuda.is_available():
         print("WARNING: CUDA is not available. Some backends may not work.")
-    print("Running matrix multiplication benchmarks...")
-    benchmark.run(print_data=True, show_plots=True)
+
+    benchmark.run(
+        print_data=True,
+        diff_col=len(BACKENDS) == 2,
+        show_plots=False,
+        save_path="results",
+    )
 
 
 if __name__ == "__main__":

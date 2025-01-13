@@ -6,11 +6,8 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "matplotlib>=3.10.0",
-    "numpy<2.0",
+    "numpy>=2.2.1",
     "pandas>=2.2.3",
-    "torch>=2.0.0",
-    "triton",
+    "torch>=2.5.1",
+    "triton>=3.1.0",
 ]
-
-[tool.uv.sources]
-triton = { git = "https://github.com/triton-lang/triton", subdirectory = "python" }
