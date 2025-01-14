@@ -6,7 +6,7 @@ from .triton_backend import TritonBackend
 
 BACKENDS = {
     "numpy": NumpyBackend,
-    # "purepython": PurePythonBackend,
+    "purepython": PurePythonBackend,
     "torch": TorchBackend,
     "triton": TritonBackend,
 }

@@ -1,21 +1,11 @@
 # source: https://github.com/triton-lang/triton/blob/main/python/tutorials/03-matrix-multiplication.py
 
 import torch
-
 import triton
 import triton.language as tl
 
 
-def is_cuda():
-    return triton.runtime.driver.active.get_current_target().backend == "cuda"
-
-
-def is_hip_mi200():
-    target = triton.runtime.driver.active.get_current_target()
-    return target.backend == 'hip' and target.arch == 'gfx90a'
-
-
-def get_cuda_autotune_config():
+def get_autotune_config():
     return [
         triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 256, 'BLOCK_SIZE_K': 64, 'GROUP_SIZE_M': 8}, num_stages=3,
                       num_warps=8),
@@ -51,33 +41,6 @@ def get_cuda_autotune_config():
         triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 32, 'BLOCK_SIZE_K': 64, 'GROUP_SIZE_M': 8}, num_stages=4,
                       num_warps=4)
     ]
-
-
-def get_hip_autotune_config():
-    return [
-        triton.Config(
-            {'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 256, 'BLOCK_SIZE_K': 16, 'GROUP_SIZE_M': 1, 'waves_per_eu': 2},
-            num_warps=4, num_stages=2),
-        triton.Config(
-            {'BLOCK_SIZE_M': 256, 'BLOCK_SIZE_N': 256, 'BLOCK_SIZE_K': 16, 'GROUP_SIZE_M': 4, 'waves_per_eu': 2},
-            num_warps=8, num_stages=2),
-        triton.Config(
-            {'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 128, 'BLOCK_SIZE_K': 32, 'GROUP_SIZE_M': 1, 'waves_per_eu': 2},
-            num_warps=8, num_stages=2),
-        triton.Config(
-            {'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 128, 'BLOCK_SIZE_K': 32, 'GROUP_SIZE_M': 8, 'waves_per_eu': 3},
-            num_warps=4, num_stages=2),
-        triton.Config(
-            {'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 64, 'BLOCK_SIZE_K': 32, 'GROUP_SIZE_M': 1, 'waves_per_eu': 8},
-            num_warps=4, num_stages=2),
-    ]
-
-
-def get_autotune_config():
-    if is_cuda():
-        return get_cuda_autotune_config()
-    else:
-        return get_hip_autotune_config()
 
 
 # `triton.jit`'ed functions can be auto-tuned by using the `triton.autotune` decorator, which consumes:
@@ -200,20 +163,35 @@ def matmul(a, b, activation=""):
 
 ###############################################################################
 
+import typing as tp
+
 from .base import MatrixBackend
+
+triton_matmul = matmul
 
 
 class TritonBackend(MatrixBackend[torch.Tensor]):
-    @staticmethod
     def generate_matrix(
-        rows: int, cols: int, device: str, dtype: torch.dtype, *_, **__
+        rows: int, cols: int, dtype: torch.dtype, device: str, *_, **__
     ) -> torch.Tensor:
-        if device != "cuda":
-            raise RuntimeError("TritonBackend requires CUDA device")
-        return torch.randn(rows, cols, device=device, dtype=dtype)
+        return torch.randn(rows, cols, dtype=dtype, device=device)
 
     @staticmethod
     def multiply_matrices(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        if not (a.is_cuda and b.is_cuda):
-            raise RuntimeError("TritonBackend requires CUDA tensors")
-        return matmul(a, b)
+        return triton_matmul(a, b)
+
+    @staticmethod
+    def convert_dtype(
+        dtype_str: tp.Literal["fp8", "fp16", "fp32", "fp64"]
+    ) -> tp.Any | tp.NoReturn:
+        dtype = {
+            "fp8": None,
+            "fp16": torch.float16,
+            "fp32": torch.float32,
+            "fp64": torch.float64,
+        }[dtype_str]
+
+        if not dtype:
+            raise ValueError(f"Unsupported dtype: {dtype_str}")
+
+        return dtype
