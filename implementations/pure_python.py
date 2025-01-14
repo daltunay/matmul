@@ -1,36 +1,34 @@
-import random
 import typing as tp
 
-from .base import MatrixBackend
+import numpy as np
+from numpy.typing import NDArray
 
-Matrix = list[list[float]]
+from .base import DType, MatrixBackend
 
 
-class PurePythonBackend(MatrixBackend[Matrix]):
+class PurePythonBackend(MatrixBackend[NDArray]):
     @staticmethod
-    def generate_matrix(rows: int, cols: int, dtype: tp.Any = None, *_, **__) -> Matrix:
-        return [[random.normalvariate(0, 1) for _ in range(cols)] for _ in range(rows)]
+    def generate_matrix(
+        rows: int,
+        cols: int,
+        dtype: np.dtype,
+        device: str,
+        *_: tp.Any,
+        **__: tp.Any,
+    ) -> NDArray:
+        return np.random.randn(rows, cols).astype(dtype)
 
     @staticmethod
-    def multiply_matrices(a: Matrix, b: Matrix) -> Matrix:
-        """Compute C = A @ B."""
-        M = len(a)
-        K = len(a[0])
-        N = len(b[0])
-
-        result = [[0.0] * N for _ in range(M)]
-
-        for i in range(M):
-            for j in range(N):
-                for k in range(K):
-                    result[i][j] += a[i][k] * b[k][j]
-
+    def multiply_matrices(a: NDArray, b: NDArray) -> NDArray:
+        result = np.zeros((a.shape[0], b.shape[1]), dtype=a.dtype)
+        for i in range(a.shape[0]):
+            for j in range(b.shape[1]):
+                for k in range(a.shape[1]):
+                    result[i, j] += a[i, k] * b[k, j]
         return result
 
     @staticmethod
-    def convert_dtype(
-        dtype_str: tp.Literal["fp8", "fp16", "fp32", "fp64"]
-    ) -> tp.Any | tp.NoReturn:
+    def convert_dtype(dtype_str: DType) -> np.dtype:
         dtype = {
             "fp8": None,
             "fp16": None,

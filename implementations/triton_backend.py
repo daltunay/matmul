@@ -165,14 +165,20 @@ def matmul(a, b, activation=""):
 
 import typing as tp
 
-from .base import MatrixBackend
+from .base import DType, MatrixBackend
 
 triton_matmul = matmul
 
 
 class TritonBackend(MatrixBackend[torch.Tensor]):
+    @staticmethod
     def generate_matrix(
-        rows: int, cols: int, dtype: torch.dtype, device: str, *_, **__
+        rows: int,
+        cols: int,
+        dtype: torch.dtype,
+        device: str = "cpu",
+        *_: tp.Any,
+        **__: tp.Any,
     ) -> torch.Tensor:
         return torch.randn(rows, cols, dtype=dtype, device=device)
 
@@ -181,9 +187,7 @@ class TritonBackend(MatrixBackend[torch.Tensor]):
         return triton_matmul(a, b)
 
     @staticmethod
-    def convert_dtype(
-        dtype_str: tp.Literal["fp8", "fp16", "fp32", "fp64"]
-    ) -> tp.Any | tp.NoReturn:
+    def convert_dtype(dtype_str: DType) -> torch.dtype:
         dtype = {
             "fp8": None,
             "fp16": torch.float16,
@@ -191,7 +195,7 @@ class TritonBackend(MatrixBackend[torch.Tensor]):
             "fp64": torch.float64,
         }[dtype_str]
 
-        if not dtype:
+        if dtype is None:
             raise ValueError(f"Unsupported dtype: {dtype_str}")
 
         return dtype

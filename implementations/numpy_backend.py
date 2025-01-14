@@ -1,30 +1,28 @@
 import typing as tp
-
 import numpy as np
-from numpy.typing import DTypeLike, NDArray
+from numpy.typing import NDArray
 
-from .base import MatrixBackend
+from .base import DType, MatrixBackend
 
 
 class NumpyBackend(MatrixBackend[NDArray]):
     @staticmethod
     def generate_matrix(
-        rows: int, cols: int, dtype: DTypeLike = None, *_, **__
+        rows: int,
+        cols: int,
+        dtype: np.dtype,
+        device: str,
+        *_: tp.Any,
+        **__: tp.Any
     ) -> NDArray:
-        return (
-            np.random.randn(rows, cols).astype(dtype)
-            if dtype is not None
-            else np.random.randn(rows, cols)
-        )
+        return np.random.randn(rows, cols).astype(dtype)
 
     @staticmethod
     def multiply_matrices(a: NDArray, b: NDArray) -> NDArray:
         return np.matmul(a, b)
 
     @staticmethod
-    def convert_dtype(
-        dtype_str: tp.Literal["fp8", "fp16", "fp32", "fp64"]
-    ) -> tp.Any | tp.NoReturn:
+    def convert_dtype(dtype_str: DType) -> np.dtype:
         dtype = {
             "fp8": None,
             "fp16": np.float16,
@@ -32,7 +30,7 @@ class NumpyBackend(MatrixBackend[NDArray]):
             "fp64": np.float64,
         }[dtype_str]
 
-        if not dtype:
+        if dtype is None:
             raise ValueError(f"Unsupported dtype: {dtype_str}")
 
         return dtype

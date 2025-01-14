@@ -1,11 +1,11 @@
 import json
+import typing as tp
 
 import structlog
 import torch
 import triton
 import triton.testing
-from timeout_decorator import TimeoutError, timeout
-
+import pandas as pd
 from implementations import BACKENDS, MatrixBackend
 
 with open("matrix_specs.json", "r") as f:
@@ -28,11 +28,15 @@ def get_device():
 
 configs = [
     triton.testing.Benchmark(
-        x_names=["M", "N", "K", "dtype_str"],
+        x_names=["M", "N", "K", "dtype"],
         x_vals=[
             (c["M"], c["N"], c["K"], dtype_str)
             for c in MATRIX_SHAPES
-            for dtype_str in ["fp8", "fp16", "fp32"]
+            for dtype_str in [
+                "fp8",
+                "fp16",
+                "fp32",
+            ]
         ],
         line_arg="backend",
         line_vals=BACKENDS.values(),
@@ -54,19 +58,18 @@ def benchmark(
     device: str,
     dtype_str: str,
     warmup: int = 1,
-    rep: int = 10,
-    timeout_sec: float = 1,
-) -> float:
+    rep: int = 5,
+) -> float | None:
     """Benchmark function for matrix multiplication."""
     log = logger.bind(backend=backend.__name__, shape=(M, N, K), dtype_str=dtype_str)
     log.info("Starting benchmark")
 
     try:
         dtype = backend.convert_dtype(dtype_str)
-        log = log.bind(dtype=dtype.__name__)
+        log = log.bind(dtype=dtype)
     except ValueError:
         log.warning("dtype not supported", status="skipped")
-        return 0.0
+        return None
 
     log.debug("Generating matrices")
     a = backend.generate_matrix(
@@ -82,37 +85,37 @@ def benchmark(
         dtype=dtype,
     )
 
-    @timeout(seconds=timeout_sec)
-    def matmul():
-        return backend.multiply_matrices(a, b)
+    log.debug("Running benchmark")
 
-    log.debug("Running benchmark", warmup=warmup, rep=rep)
-    try:
-        time_ms = triton.testing.do_bench(
-            fn=matmul,
-            warmup=warmup,
-            rep=rep,
-            grad_to_none=None,
-            quantiles=None,
-            fast_flush=True,
-            return_mode="median",
-            device_type=device,
-        )
-        tflops = 2 * M * N * K * 1e-12 / (time_ms * 1e-3)
-        log.success(
-            "Benchmark complete", time_ms=time_ms, tflops=tflops, status="success"
-        )
-        return tflops
-    except TimeoutError:
-        log.error("Benchmark timeout", timeout=timeout_sec, status="timeout")
-        return 0.0
+    def safe_matmul() -> tp.Any | None:
+        try:
+            return backend.multiply_matrices(a, b)
+        except Exception as e:
+            log.error("Error occurred during matmul", error=e)
+            return None
+    
+    time_ms = triton.testing.do_bench(
+        fn=safe_matmul,
+        warmup=warmup,
+        rep=rep,
+        grad_to_none=None,
+        quantiles=None,
+        fast_flush=True,
+        return_mode="median",
+        device_type=device,
+    )
+    tflops = 2 * M * N * K * 1e-12 / (time_ms * 1e-3)
+
+    log.info("Benchmark complete", time_ms=time_ms, tflops=tflops, status="success")
+
+    return tflops
 
 
 def main():
     if not torch.cuda.is_available():
         logger.warning("cuda not available", message="Some backends may not work")
 
-    results_df = benchmark.run(
+    results_df: pd.DataFrame = benchmark.run(
         print_data=True,
         diff_col=len(BACKENDS) == 2,
         show_plots=False,
