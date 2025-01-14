@@ -1,14 +1,13 @@
 [project]
 name = "matmul"
 version = "0.1.0"
-description = "Add your description here"
+description = "Matrix Multiplication Benchmarking"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "matplotlib>=3.10.0",
     "numpy>=2.2.1",
     "pandas>=2.2.3",
-    "plotly>=5.24.1",
     "torch>=2.5.1",
     "triton>=3.1.0",
 ]

@@ -8,7 +8,7 @@ Matrix = list[list[float]]
 class PurePythonBackend(MatrixBackend[Matrix]):
     @staticmethod
     def generate_matrix(rows: int, cols: int, *_, **__) -> Matrix:
-        return [[random.random() for _ in range(cols)] for _ in range(rows)]
+        return [[random.normalvariate() for _ in range(cols)] for _ in range(rows)]
 
     @staticmethod
     def multiply_matrices(a: Matrix, b: Matrix) -> Matrix:

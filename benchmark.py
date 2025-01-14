@@ -1,12 +1,10 @@
 import json
 
-import pandas as pd
 import torch
 import triton
 import triton.testing
 
 from implementations import BACKENDS, MatrixBackend
-from plot import create_3d_plot
 
 with open("matrix_specs.json", "r") as f:
     # real-world (M, N, K) shapes for Llama 70B production training
@@ -83,17 +81,21 @@ def main():
     if not torch.cuda.is_available():
         print("WARNING: CUDA is not available. Some backends may not work.")
 
-    benchmark.run(
+    results_df = benchmark.run(
         print_data=True,
         diff_col=len(BACKENDS) == 2,
         show_plots=False,
         save_path="results",
+        return_df=True,
     )
 
-    results_df = pd.read_csv("results/matmul-tflops-comparison.csv")
-    fig = create_3d_plot(results_df)
-    fig.show()
-    fig.write_html("results/matmul-tflops-comparison-3d.html")
+    fig_3d = create_3d_plot(results_df)
+    fig_3d.show()
+    fig_3d.write_html("results/matmul-tflops-comparison-3d.html")
+
+    fig_bar = create_bar_comparison(results_df)
+    fig_bar.show()
+    fig_bar.write_html("results/matmul-tflops-comparison-bar.html")
 
 
 if __name__ == "__main__":
