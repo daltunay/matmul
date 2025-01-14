@@ -1,12 +1,22 @@
 import json
 import typing as tp
+import warnings
 
+import pandas as pd
 import structlog
 import torch
 import triton
 import triton.testing
-import pandas as pd
-from implementations import BACKENDS, MatrixBackend
+
+from implementations import BACKENDS, DTypeT, MatrixBackend
+from plot import plot_results
+
+warnings.filterwarnings(
+    "ignore",
+    category=FutureWarning,
+    module="triton.testing",
+    message="The behavior of DataFrame concatenation with empty or all-NA entries is deprecated.",
+)
 
 with open("matrix_specs.json", "r") as f:
     # real-world (M, N, K) shapes for Llama 70B production training
@@ -56,20 +66,22 @@ def benchmark(
     N: int,
     K: int,
     device: str,
-    dtype_str: str,
-    warmup: int = 1,
-    rep: int = 5,
+    dtype: DTypeT | str,
+    warmup: int = 0,
+    rep: int = 1,
 ) -> float | None:
     """Benchmark function for matrix multiplication."""
-    log = logger.bind(backend=backend.__name__, shape=(M, N, K), dtype_str=dtype_str)
+    log = logger.bind(backend=backend.__name__, shape=(M, N, K), dtype_str=dtype)
     log.info("Starting benchmark")
 
-    try:
-        dtype = backend.convert_dtype(dtype_str)
-        log = log.bind(dtype=dtype)
-    except ValueError:
-        log.warning("dtype not supported", status="skipped")
-        return None
+    if isinstance(dtype, str):
+        try:
+            dtype = backend.convert_dtype(dtype)
+        except ValueError:
+            log.warning("dtype not supported", dtype=dtype, status="skipped")
+            return None
+
+    log = log.bind(dtype=dtype)
 
     log.debug("Generating matrices")
     a = backend.generate_matrix(
@@ -85,15 +97,15 @@ def benchmark(
         dtype=dtype,
     )
 
-    log.debug("Running benchmark")
-
     def safe_matmul() -> tp.Any | None:
         try:
             return backend.multiply_matrices(a, b)
         except Exception as e:
             log.error("Error occurred during matmul", error=e)
             return None
-    
+
+    log.debug("Running benchmark")
+
     time_ms = triton.testing.do_bench(
         fn=safe_matmul,
         warmup=warmup,
@@ -116,12 +128,37 @@ def main():
         logger.warning("cuda not available", message="Some backends may not work")
 
     results_df: pd.DataFrame = benchmark.run(
-        print_data=True,
+        print_data=False,
         diff_col=len(BACKENDS) == 2,
         show_plots=False,
         save_path="results",
         return_df=True,
+    )[0]
+
+    results_df["shape"] = (
+        "("
+        + results_df["M"].astype(str)
+        + ", "
+        + results_df["N"].astype(str)
+        + ", "
+        + results_df["K"].astype(str)
+        + ")"
     )
+
+    results_df_wide = results_df.pivot(
+        index="shape", columns=["dtype"], values=list(BACKENDS.keys())
+    )
+
+    print("Matrix Multiplication TFLOPS results:")
+    print(results_df_wide)
+
+    fig = plot_results(results_df_wide)
+    fig.savefig(
+        "results/matmul-tflops-comparison-barplot.png",
+        bbox_inches="tight",
+        dpi=300,
+    )
+    fig.show()
 
 
 if __name__ == "__main__":
