@@ -12,6 +12,7 @@ import triton.testing
 from implementations import BACKENDS, MatrixBackend
 from implementations.base import DType, DTypeT
 from plot import plot_results
+from processing import process_results
 
 warnings.filterwarnings(
     "ignore",
@@ -24,29 +25,23 @@ log = structlog.get_logger()
 
 
 def generate_random_shapes(
-    num_shapes: int = 100, max_dim: int = 2**14, powers_of_two: bool = True
+    num_shapes: int = 1000, max_dim: int = 2**14, powers_of_two: bool = True
 ) -> list[tuple[int, int, int]]:
     shapes = set()
     if powers_of_two:
         max_power_of_two = int(log2(max_dim))
         while len(shapes) < num_shapes:
-            shapes.add(
-                (
-                    2 ** random.randint(0, max_power_of_two),
-                    2 ** random.randint(0, max_power_of_two),
-                    2 ** random.randint(0, max_power_of_two),
-                )
-            )
+            m = 2 ** random.randint(0, max_power_of_two)
+            n = 2 ** random.randint(0, max_power_of_two)
+            k = 2 ** random.randint(0, max_power_of_two)
+            shapes.add((min(m, k), n, max(m, k)))
     else:
         while len(shapes) < num_shapes:
-            shapes.add(
-                (
-                    random.randint(1, max_dim),
-                    random.randint(1, max_dim),
-                    random.randint(1, max_dim),
-                )
-            )
-    return list(shapes)
+            m = random.randint(1, max_dim)
+            n = random.randint(1, max_dim)
+            k = random.randint(1, max_dim)
+            shapes.add((min(m, k), n, max(m, k)))
+    return sorted(list(shapes))
 
 
 def get_device() -> str:
@@ -121,7 +116,6 @@ def benchmark(
     )
 
     def safe_matmul() -> tp.Any | None:
-        # TODO: add timeout
         try:
             return backend.multiply_matrices(a, b)
         except Exception as e:
@@ -151,34 +145,16 @@ def main():
     if not torch.cuda.is_available():
         log.warning("cuda not available", message="Some backends may not work")
 
-    results_df: pd.DataFrame = benchmark.run(
-        print_data=False,
-        diff_col=len(BACKENDS) == 2,
-        show_plots=False,
-        save_path="results",
-        return_df=True,
-    )[0]
+    results_raw: pd.DataFrame = benchmark.run(return_df=True)[0]
+    results_raw.to_csv("results_raw/matmul-tflops-comparison-raw.csv")
+    print("Matrix Multiplication TFLOPS results_raw (raw):", results_raw)
 
-    results_df["shape"] = (
-        "("
-        + results_df["M"].astype(str)
-        + ", "
-        + results_df["N"].astype(str)
-        + ", "
-        + results_df["K"].astype(str)
-        + ")"
-    )
+    results_processed = process_results(results_raw)
+    results_processed.to_csv("results_raw/matmul-tflops-comparison-processed.csv")
+    print("Matrix Multiplication TFLOPS results_raw (processed):", results_processed)
 
-    results_df = results_df.pivot(
-        index="shape",
-        columns=["dtype"],
-        values=list(BACKENDS.keys()),
-    )
-    results_df.to_csv("results/matmul-tflops-comparison.csv")
-    print("Matrix Multiplication TFLOPS results:", results_df)
-
-    fig = plot_results(results_df)
-    fig.savefig("results/matmul-tflops-comparison.png", bbox_inches="tight", dpi=300)
+    fig = plot_results(results_processed)
+    fig.savefig("results_raw/matmul-tflops-comparison.png")
     fig.show()
 
 
