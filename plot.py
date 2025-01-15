@@ -3,10 +3,10 @@ import numpy as np
 import pandas as pd
 
 
-def plot_results(results_df_wide: pd.DataFrame) -> plt.Figure:
+def plot_results(results_df: pd.DataFrame) -> plt.Figure:
     """Plot benchmark results with separate subplot per dtype."""
-    backends = results_df_wide.columns.levels[0]
-    dtypes = results_df_wide.columns.levels[1]
+    backends = results_df.columns.levels[0]
+    dtypes = results_df.columns.levels[1]
 
     fig, axes = plt.subplots(
         len(dtypes),
@@ -19,13 +19,13 @@ def plot_results(results_df_wide: pd.DataFrame) -> plt.Figure:
 
     colors = plt.cm.Set3(np.linspace(0, 1, len(backends)))
     bar_width = 0.8 / len(backends)
-    x = np.arange(len(results_df_wide.index))
+    x = np.arange(len(results_df.index))
 
     for ax, dtype in zip(axes, dtypes):
         ax: plt.Axes
         dtype: str
 
-        data = pd.DataFrame({b: results_df_wide[b][dtype] for b in backends})
+        data = pd.DataFrame({b: results_df[b][dtype] for b in backends})
         best_perf = data.max(axis=1)
 
         for i, (backend, color) in enumerate(zip(backends, colors)):
@@ -60,7 +60,7 @@ def plot_results(results_df_wide: pd.DataFrame) -> plt.Figure:
         ax.set_ylabel("TFLOPS")
         ax.grid(True, axis="y", linestyle="--")
         ax.set_xticks(x + bar_width * len(backends) / 2)
-        ax.set_xticklabels(results_df_wide.index, rotation=30, ha="right")
+        ax.set_xticklabels(results_df.index, rotation=30, ha="right")
 
     axes[0].legend(title="backend", bbox_to_anchor=(1.05, 1), loc="upper left")
     axes[-1].set_xlabel("shape")

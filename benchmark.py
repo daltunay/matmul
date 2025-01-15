@@ -1,4 +1,4 @@
-import json
+import random
 import typing as tp
 import warnings
 
@@ -8,7 +8,8 @@ import torch
 import triton
 import triton.testing
 
-from implementations import BACKENDS, DTypeT, MatrixBackend
+from implementations import BACKENDS, MatrixBackend
+from implementations.base import DType, DTypeT
 from plot import plot_results
 
 warnings.filterwarnings(
@@ -18,13 +19,20 @@ warnings.filterwarnings(
     message="The behavior of DataFrame concatenation with empty or all-NA entries is deprecated.",
 )
 
-with open("matrix_specs.json", "r") as f:
-    # real-world (M, N, K) shapes for Llama 70B production training
-    # https://semianalysis.com/2024/12/22/mi300x-vs-h100-vs-h200-benchmark-part-1-training/#general-matrix-multiply-gemm-performance
-    # https://github.com/pytorch-labs/float8_experimental/blob/main/benchmarks/bench_matmul.py#L58
-    MATRIX_SHAPES = json.load(f)
+log = structlog.get_logger()
 
-logger = structlog.get_logger()
+
+def generate_random_shapes(
+    num_shapes: int = 100, max_dim: int = 2**14
+) -> list[tuple[int, int, int]]:
+    """Generate random matrix shapes."""
+    shapes = []
+    for _ in range(num_shapes):
+        M = random.randint(1, max_dim)
+        N = random.randint(1, max_dim)
+        K = random.randint(1, max_dim)
+        shapes.append((M, N, K))
+    return shapes
 
 
 def get_device():
@@ -36,17 +44,15 @@ def get_device():
     return "cpu"
 
 
+MATRIX_SHAPES = generate_random_shapes()
+
 configs = [
     triton.testing.Benchmark(
         x_names=["M", "N", "K", "dtype"],
         x_vals=[
-            (c["M"], c["N"], c["K"], dtype_str)
-            for c in MATRIX_SHAPES
-            for dtype_str in [
-                "fp8",
-                "fp16",
-                "fp32",
-            ]
+            (M, N, K, dtype_str)
+            for (M, N, K) in MATRIX_SHAPES
+            for dtype_str in ["fp8", "fp16", "fp32", "fp64"]
         ],
         line_arg="backend",
         line_vals=BACKENDS.values(),
@@ -66,24 +72,24 @@ def benchmark(
     N: int,
     K: int,
     device: str,
-    dtype: DTypeT | str,
-    warmup: int = 0,
-    rep: int = 1,
+    dtype: DTypeT | DType,
+    warmup: int = 1,
+    rep: int = 10,
 ) -> float | None:
     """Benchmark function for matrix multiplication."""
-    log = logger.bind(backend=backend.__name__, shape=(M, N, K), dtype_str=dtype)
-    log.info("Starting benchmark")
+    logger = log.bind(backend=backend.__name__, shape=(M, N, K), dtype_str=dtype)
+    logger.info("Starting benchmark")
 
-    if isinstance(dtype, str):
+    if isinstance(dtype, DType):
         try:
             dtype = backend.convert_dtype(dtype)
         except ValueError:
-            log.warning("dtype not supported", dtype=dtype, status="skipped")
+            logger.warning("dtype not supported", status="skipped")
             return None
 
-    log = log.bind(dtype=dtype)
+    logger = logger.bind(dtype=dtype)
 
-    log.debug("Generating matrices")
+    logger.debug("Generating matrices")
     a = backend.generate_matrix(
         rows=M,
         cols=K,
@@ -98,13 +104,14 @@ def benchmark(
     )
 
     def safe_matmul() -> tp.Any | None:
+        # TODO: add timeout
         try:
             return backend.multiply_matrices(a, b)
         except Exception as e:
-            log.error("Error occurred during matmul", error=e)
+            logger.error("Error occurred during matmul", error=e)
             return None
 
-    log.debug("Running benchmark")
+    logger.debug("Running benchmark")
 
     time_ms = triton.testing.do_bench(
         fn=safe_matmul,
@@ -118,14 +125,14 @@ def benchmark(
     )
     tflops = 2 * M * N * K * 1e-12 / (time_ms * 1e-3)
 
-    log.info("Benchmark complete", time_ms=time_ms, tflops=tflops, status="success")
+    logger.info("Benchmark complete", time_ms=time_ms, tflops=tflops, status="success")
 
     return tflops
 
 
 def main():
     if not torch.cuda.is_available():
-        logger.warning("cuda not available", message="Some backends may not work")
+        log.warning("cuda not available", message="Some backends may not work")
 
     results_df: pd.DataFrame = benchmark.run(
         print_data=False,
@@ -145,19 +152,17 @@ def main():
         + ")"
     )
 
-    results_df_wide = results_df.pivot(
-        index="shape", columns=["dtype"], values=list(BACKENDS.keys())
+    results_df = results_df.pivot(
+        index="shape",
+        columns=["dtype"],
+        values=list(BACKENDS.keys()),
     )
 
     print("Matrix Multiplication TFLOPS results:")
-    print(results_df_wide)
+    print(results_df)
 
-    fig = plot_results(results_df_wide)
-    fig.savefig(
-        "results/matmul-tflops-comparison-barplot.png",
-        bbox_inches="tight",
-        dpi=300,
-    )
+    fig = plot_results(results_df)
+    fig.savefig("results/matmul-tflops-comparison.png", bbox_inches="tight", dpi=300)
     fig.show()
 
 

@@ -1,4 +1,4 @@
-from .base import DTypeT, MatrixBackend
+from .base import MatrixBackend
 from .numpy_backend import NumpyBackend
 from .pure_python import PurePythonBackend
 from .torch_backend import TorchBackend
@@ -11,4 +11,4 @@ BACKENDS = {
     "triton": TritonBackend,
 }
 
-__all__ = ["MatrixBackend", "DTypeT", "BACKENDS"]
+__all__ = ["MatrixBackend", "BACKENDS"]
