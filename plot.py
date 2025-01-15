@@ -26,7 +26,7 @@ def plot_results(results_df: pd.DataFrame) -> plt.Figure:
         dtype: str
 
         data = pd.DataFrame({b: results_df[b][dtype] for b in backends})
-        best_perf = data.max(axis=1)
+        # best_perf = data.max(axis=1)
 
         for i, (backend, color) in enumerate(zip(backends, colors)):
             values = data[backend]
@@ -41,20 +41,20 @@ def plot_results(results_df: pd.DataFrame) -> plt.Figure:
                 color=color,
             )
 
-            best_mask = np.isclose(values, best_perf, rtol=1e-5)
-            for bar, is_best in zip(bars, best_mask):
-                bar: plt.Rectangle
-                if is_best and not np.isnan(bar.get_height()):
-                    ax.bar(
-                        bar.get_x(),
-                        bar.get_height(),
-                        bar_width,
-                        label="_nolegend_",
-                        fill=False,
-                        edgecolor="red",
-                        linewidth=2,
-                        align="edge",
-                    )
+            # best_mask = np.isclose(values, best_perf, rtol=1e-5)
+            # for bar, is_best in zip(bars, best_mask):
+            #     bar: plt.Rectangle
+            #     if is_best and not np.isnan(bar.get_height()):
+            #         ax.bar(
+            #             bar.get_x(),
+            #             bar.get_height(),
+            #             bar_width,
+            #             label="_nolegend_",
+            #             fill=False,
+            #             edgecolor="red",
+            #             linewidth=2,
+            #             align="edge",
+            #         )
 
         ax.set_title(f"{dtype=}")
         ax.set_ylabel("TFLOPS")

@@ -1,6 +1,7 @@
 import random
 import typing as tp
 import warnings
+from math import log2
 
 import pandas as pd
 import structlog
@@ -23,25 +24,41 @@ log = structlog.get_logger()
 
 
 def generate_random_shapes(
-    num_shapes: int = 100, max_dim: int = 2**14
+    num_shapes: int = 100, max_dim: int = 2**14, powers_of_two: bool = True
 ) -> list[tuple[int, int, int]]:
-    """Generate random matrix shapes."""
-    shapes = []
-    for _ in range(num_shapes):
-        M = random.randint(1, max_dim)
-        N = random.randint(1, max_dim)
-        K = random.randint(1, max_dim)
-        shapes.append((M, N, K))
-    return shapes
+    shapes = set()
+    if powers_of_two:
+        max_power_of_two = int(log2(max_dim))
+        while len(shapes) < num_shapes:
+            shapes.add(
+                (
+                    2 ** random.randint(0, max_power_of_two),
+                    2 ** random.randint(0, max_power_of_two),
+                    2 ** random.randint(0, max_power_of_two),
+                )
+            )
+    else:
+        while len(shapes) < num_shapes:
+            shapes.add(
+                (
+                    random.randint(1, max_dim),
+                    random.randint(1, max_dim),
+                    random.randint(1, max_dim),
+                )
+            )
+    return list(shapes)
 
 
-def get_device():
-    """Get the appropriate device for benchmarking."""
+def get_device() -> str:
     if torch.cuda.is_available():
-        torch.cuda.init()
         return "cuda"
-    print("WARNING: CUDA not available, falling back to CPU")
     return "cpu"
+
+
+def get_device_name() -> str:
+    if torch.cuda.is_available():
+        return torch.cuda.get_device_name()
+    return "CPU"
 
 
 MATRIX_SHAPES = generate_random_shapes()
@@ -80,7 +97,7 @@ def benchmark(
     logger = log.bind(backend=backend.__name__, shape=(M, N, K), dtype_str=dtype)
     logger.info("Starting benchmark")
 
-    if isinstance(dtype, DType):
+    if isinstance(dtype, str):
         try:
             dtype = backend.convert_dtype(dtype)
         except ValueError:
@@ -108,7 +125,7 @@ def benchmark(
         try:
             return backend.multiply_matrices(a, b)
         except Exception as e:
-            logger.error("Error occurred during matmul", error=e)
+            logger.error("Error occurred during matmul", error=str(e))
             return None
 
     logger.debug("Running benchmark")
@@ -157,9 +174,8 @@ def main():
         columns=["dtype"],
         values=list(BACKENDS.keys()),
     )
-
-    print("Matrix Multiplication TFLOPS results:")
-    print(results_df)
+    results_df.to_csv("results/matmul-tflops-comparison.csv")
+    print("Matrix Multiplication TFLOPS results:", results_df)
 
     fig = plot_results(results_df)
     fig.savefig("results/matmul-tflops-comparison.png", bbox_inches="tight", dpi=300)
