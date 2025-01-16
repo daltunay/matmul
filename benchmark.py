@@ -1,4 +1,5 @@
 import argparse
+import os
 import random
 import typing as tp
 import warnings
@@ -27,6 +28,8 @@ log = structlog.get_logger()
 def generate_random_shapes(
     num_shapes: int = 1000, max_dim: int = 2**14, powers_of_two: bool = True
 ) -> list[tuple[int, int, int]]:
+    random.seed(42)
+
     shapes = set()
     if powers_of_two:
         max_power_of_two = int(log2(max_dim))
@@ -160,6 +163,7 @@ def main(num_shapes: int, max_dim: int, powers_of_two: bool, warmup: int, rep: i
     log.info("Matrix Multiplication TFLOPS results:\n" + results_df.to_string())
 
     device_name_fmt = device_name.lower().replace(" ", "-")
+    os.makedirs("results", exist_ok=True)
     results_df.to_csv(f"results/matmul-tflops-benchmark-{device_name_fmt}.csv")
 
     fig = plot_results(results_df)
