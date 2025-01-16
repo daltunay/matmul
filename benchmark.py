@@ -1,6 +1,7 @@
 import argparse
 import os
 import random
+import sys
 import typing as tp
 import warnings
 from math import log2
@@ -8,12 +9,13 @@ from math import log2
 import pandas as pd
 import structlog
 import torch
+import torch.version
 import triton
 import triton.testing
 
 from implementations import BACKENDS, MatrixBackend
 from implementations.base import DType, DTypeT
-from plot import plot_results
+from plot import create_figure
 
 warnings.filterwarnings(
     "ignore",
@@ -57,6 +59,30 @@ def get_device_name() -> str:
     if torch.cuda.is_available():
         return torch.cuda.get_device_name()
     return "CPU"
+
+
+def get_device_count() -> int:
+    if torch.cuda.is_available():
+        return torch.cuda.device_count()
+    return 1
+
+
+def get_python_version() -> str:
+    return f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+
+
+def get_torch_version() -> str:
+    return torch.__version__
+
+
+def get_cuda_version() -> str:
+    if torch.cuda.is_available():
+        return torch.version.cuda
+    return "N/A"
+
+
+def get_triton_version() -> str:
+    return triton.__version__
 
 
 def main(num_shapes: int, max_dim: int, powers_of_two: bool, warmup: int, rep: int):
@@ -148,26 +174,58 @@ def main(num_shapes: int, max_dim: int, powers_of_two: bool, warmup: int, rep: i
             return_mode="median",
             device_type=device,
         )
-        tflops = 2 * M * N * K * 1e-12 / (time_ms * 1e-3)
 
-        logger.info(
-            "Benchmark complete", time_ms=time_ms, tflops=tflops, status="success"
-        )
+        logger.info("Benchmark complete", time_ms=time_ms, status="success")
 
-        return tflops
+        return time_ms
 
-    results_df: pd.DataFrame = benchmark.run(return_df=True)[0]
+    results: pd.DataFrame = benchmark.run(return_df=True)[0]
 
-    device_name = get_device_name()
-    results_df.insert(0, "device", device_name)
-    log.info("Matrix Multiplication TFLOPS results:\n" + results_df.to_string())
+    df = pd.melt(
+        results,
+        id_vars=["M", "N", "K", "dtype"],
+        var_name="backend",
+        value_name="time_ms",
+    )
 
-    device_name_fmt = device_name.lower().replace(" ", "-")
+    # Remove rows with NaN times (unsupported operations)
+    df = df.dropna(subset=["time_ms"])
+
+    df["total_ops"] = 2 * df["M"] * df["N"] * df["K"]
+
+    df["tflop/s"] = (df["total_ops"] * 1e-12) / (df["time_ms"] * 1e-3)
+
+    df["python_version"] = get_python_version()
+    df["torch_version"] = get_torch_version()
+    df["cuda_version"] = get_cuda_version()
+    df["device_name"] = get_device_name()
+    df["device_count"] = get_device_count()
+
+    df = df[
+        [
+            "device_name",
+            "device_count",
+            "python_version",
+            "torch_version",
+            "cuda_version",
+            "M",
+            "N",
+            "K",
+            "dtype",
+            "backend",
+            "time_ms",
+            "total_ops",
+            "tflop/s",
+        ]
+    ]
+
+    print("Benchmark results:", df)
+
     os.makedirs("results", exist_ok=True)
-    results_df.to_csv(f"results/matmul-tflops-benchmark-{device_name_fmt}.csv")
+    df.to_csv("results/matmul-benchmark.csv")
 
-    fig = plot_results(results_df)
-    fig.savefig(f"results/matmul-tflops-plot-{device_name_fmt}.png")
+    fig = create_figure(df)
+    fig.write_html("results/matmul-plot.html")
     fig.show()
 
 
@@ -212,6 +270,3 @@ if __name__ == "__main__":
         warmup=args.warmup,
         rep=args.rep,
     )
-
-# example usage:
-# python benchmark.py --num-shapes 100 --max-dim 1024 --powers-of-two --warmup 1 --rep 10
