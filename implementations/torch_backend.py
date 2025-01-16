@@ -22,7 +22,7 @@ class TorchBackend(MatrixBackend[torch.Tensor]):
         return torch.matmul(a, b)
 
     @staticmethod
-    def convert_dtype(dtype_str: DType) -> torch.dtype:
+    def convert_dtype(dtype_str: DType) -> torch.dtype | tp.NoReturn:
         dtype = {
             "fp8": None,
             "fp16": torch.float16,

@@ -22,7 +22,7 @@ class NumpyBackend(MatrixBackend[NDArray]):
         return np.matmul(a, b)
 
     @staticmethod
-    def convert_dtype(dtype_str: DType) -> np.dtype:
+    def convert_dtype(dtype_str: DType) -> np.dtype | tp.NoReturn:
         dtype = {
             "fp8": None,
             "fp16": np.float16,

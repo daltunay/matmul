@@ -28,7 +28,7 @@ class PurePythonBackend(MatrixBackend[NDArray]):
         return result
 
     @staticmethod
-    def convert_dtype(dtype_str: DType) -> np.dtype:
+    def convert_dtype(dtype_str: DType) -> float | tp.NoReturn:
         dtype = {
             "fp8": None,
             "fp16": None,
