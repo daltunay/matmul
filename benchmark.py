@@ -15,7 +15,7 @@ import triton.testing
 
 from implementations import BACKENDS, MatrixBackend
 from implementations.base import DType, DTypeT
-from plot import create_figure
+from plot import create_figure, plot_benchmarks
 
 warnings.filterwarnings(
     "ignore",
@@ -188,7 +188,6 @@ def main(num_shapes: int, max_dim: int, powers_of_two: bool, warmup: int, rep: i
         value_name="time_ms",
     )
 
-    # Remove rows with NaN times (unsupported operations)
     df = df.dropna(subset=["time_ms"])
 
     df["total_ops"] = 2 * df["M"] * df["N"] * df["K"]
@@ -224,9 +223,13 @@ def main(num_shapes: int, max_dim: int, powers_of_two: bool, warmup: int, rep: i
     os.makedirs("results", exist_ok=True)
     df.to_csv("results/matmul-benchmark.csv")
 
-    fig = create_figure(df)
-    fig.write_html("results/matmul-plot.html")
-    fig.show()
+    fig_regular, fig_normalized = plot_benchmarks(df)
+
+    fig_regular.write_html("results/matmul-plot.html")
+    fig_normalized.write_html("results/matmul-plot-normalized.html")
+
+    fig_regular.show()
+    fig_normalized.show()
 
 
 if __name__ == "__main__":
