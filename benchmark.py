@@ -15,7 +15,7 @@ import triton.testing
 
 from implementations import BACKENDS, MatrixBackend
 from implementations.base import DType, DTypeT
-from plot import create_figure, plot_benchmarks
+from plot import plot_benchmarks
 
 warnings.filterwarnings(
     "ignore",
@@ -85,7 +85,14 @@ def get_triton_version() -> str:
     return triton.__version__
 
 
-def main(num_shapes: int, max_dim: int, powers_of_two: bool, warmup: int, rep: int):
+def main(
+    num_shapes: int,
+    max_dim: int,
+    powers_of_two: bool,
+    warmup: int,
+    rep: int,
+    output_path: str | None = None,
+) -> pd.DataFrame:
     if not torch.cuda.is_available():
         log.warning("cuda not available", message="Some backends may not work")
 
@@ -220,16 +227,20 @@ def main(num_shapes: int, max_dim: int, powers_of_two: bool, warmup: int, rep: i
 
     print("Benchmark results:", df)
 
-    os.makedirs("results", exist_ok=True)
-    df.to_csv("results/matmul-benchmark.csv")
+    if output_path:
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        df.to_csv(output_path)
 
-    fig_regular, fig_normalized = plot_benchmarks(df)
+        plot_dir = os.path.dirname(output_path)
+        base_name = os.path.splitext(os.path.basename(output_path))[0]
 
-    fig_regular.write_html("results/matmul-plot.html")
-    fig_normalized.write_html("results/matmul-plot-normalized.html")
+        fig_regular, fig_normalized = plot_benchmarks(df)
+        fig_regular.write_html(os.path.join(plot_dir, f"{base_name}-plot.html"))
+        fig_normalized.write_html(
+            os.path.join(plot_dir, f"{base_name}-plot-normalized.html")
+        )
 
-    fig_regular.show()
-    fig_normalized.show()
+    return df
 
 
 if __name__ == "__main__":
@@ -265,11 +276,11 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-
     main(
         num_shapes=args.num_shapes,
         max_dim=args.max_dim,
         powers_of_two=args.powers_of_two,
         warmup=args.warmup,
         rep=args.rep,
+        output_path="results/latest/benchmarks/matmul-benchmark.csv",
     )
