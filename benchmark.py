@@ -93,8 +93,17 @@ def main(
     rep: int,
     output_path: str | None = None,
 ) -> pd.DataFrame:
+    logger = log.bind(
+        shapes=num_shapes,
+        max_dim=max_dim,
+        powers_of_two=powers_of_two,
+        warmup=warmup,
+        repetitions=rep,
+    )
+    logger.info("Starting benchmark suite")
+
     if not torch.cuda.is_available():
-        log.warning("cuda not available", message="Some backends may not work")
+        log.warning("CUDA not available - some backends may be limited")
 
     MATRIX_SHAPES = generate_random_shapes(
         num_shapes=num_shapes,
@@ -133,22 +142,21 @@ def main(
         logger = log.bind(
             backend=backend.__name__,
             shape=(M, N, K),
-            dtype_str=dtype,
+            dtype=dtype,
             device=device,
             device_name=get_device_name(),
         )
-        logger.info("Starting benchmark")
+        logger.info("Starting benchmark case")
 
-        if isinstance(dtype, str):
-            try:
-                dtype = backend.convert_dtype(dtype)
-            except ValueError:
-                logger.warning("dtype not supported", status="skipped")
-                return None
+        try:
+            dtype = backend.convert_dtype(dtype) if isinstance(dtype, str) else dtype
+        except ValueError:
+            logger.warning("Unsupported dtype combination", status="skipped")
+            return None
 
         logger = logger.bind(dtype=dtype)
+        logger.debug("Generating test matrices")
 
-        logger.debug("Generating matrices")
         a = backend.generate_matrix(
             rows=M,
             cols=K,
@@ -182,11 +190,12 @@ def main(
             device_type=device,
         )
 
-        logger.info("Benchmark complete", time_ms=time_ms, status="success")
-
+        tflops = (2 * M * N * K * 1e-12) / (time_ms * 1e-3)
+        logger.info("Case complete", time_ms=f"{time_ms:.4f}", tflops=f"{tflops:.4f}")
         return time_ms
 
     results: pd.DataFrame = benchmark.run(return_df=True)[0]
+    log.info("Benchmark completed", total_cases=len(results))
 
     df = pd.melt(
         results,
@@ -228,17 +237,26 @@ def main(
     print("Benchmark results:", df)
 
     if output_path:
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
         df.to_csv(output_path)
+        log.info("Results saved", path=output_path)
 
         plot_dir = os.path.dirname(output_path)
         base_name = os.path.splitext(os.path.basename(output_path))[0]
 
         fig_regular, fig_normalized = plot_benchmarks(df)
+        log.info("Plots generated and saved", dir=os.path.dirname(output_path))
         fig_regular.write_html(os.path.join(plot_dir, f"{base_name}-plot.html"))
         fig_normalized.write_html(
             os.path.join(plot_dir, f"{base_name}-plot-normalized.html")
         )
+
+    logger.info(
+        "Benchmark suite complete",
+        total_cases=len(results),
+        successful_cases=len(df),
+        success_rate=f"{len(df)/len(results)*100:.4f}%",
+        output_path=output_path,
+    )
 
     return df
 

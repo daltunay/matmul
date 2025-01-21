@@ -3,6 +3,9 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import structlog
+
+log = structlog.get_logger()
 
 
 def create_hover_template(performance_line: str) -> str:
@@ -78,7 +81,7 @@ def create_menu(buttons: list, x: float) -> dict:
 
 
 def process_results(results_df: pd.DataFrame) -> pd.DataFrame:
-    """Process results DataFrame for plotting."""
+    log.info("Processing results for plotting")
     results_df = results_df.copy()
     results_df["shape"] = (
         "("
@@ -98,7 +101,13 @@ def process_results(results_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def create_figure(df: pd.DataFrame, normalize: bool = False) -> go.Figure:
-    """Create interactive plotly figure for benchmark results."""
+    logger = log.bind(
+        normalize=normalize,
+        num_devices=len(df["device_name"].unique()),
+        num_dtypes=len(df["dtype"].unique()),
+        num_backends=len(df["backend"].unique())
+    )
+    logger.info("Creating figure")
     dtypes = sorted(df["dtype"].unique())
     devices = sorted(df["device_name"].unique())
     backends = sorted(df["backend"].unique())
@@ -358,9 +367,23 @@ def create_figure(df: pd.DataFrame, normalize: bool = False) -> go.Figure:
             col=i % len(dtypes) or len(dtypes),
         )
 
+    logger.info(
+        "Figure created",
+        num_subplots=len(devices) * len(dtypes),
+        num_traces=len(fig.data)
+    )
     return fig
 
 
 def plot_benchmarks(df: pd.DataFrame) -> tuple[go.Figure, go.Figure]:
-    """Create both regular and normalized benchmark plots."""
-    return create_figure(df, normalize=False), create_figure(df, normalize=True)
+    logger = log.bind(
+        num_rows=len(df),
+        devices=df["device_name"].unique().tolist(),
+        dtypes=df["dtype"].unique().tolist()
+    )
+    logger.info("Generating benchmark plots")
+    
+    regular, normalized = create_figure(df, normalize=False), create_figure(df, normalize=True)
+    
+    logger.info("Plots generated successfully", plots=2)
+    return regular, normalized

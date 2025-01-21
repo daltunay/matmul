@@ -2,13 +2,16 @@ import argparse
 import os
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import seaborn as sns
 import structlog
+from sklearn.metrics import f1_score
+from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.utils import resample
 
-from predict import load_and_prepare_data
+from predict import load_and_prepare_data, visualize_tree
 
 log = structlog.get_logger()
 
@@ -21,8 +24,14 @@ def evaluate_model(
     y_test: pd.Series,
 ) -> tuple[float, float]:
     """Evaluate model on train and test sets."""
+    log.info("Evaluating model performance")
     train_acc = model.score(X_train, y_train)
     test_acc = model.score(X_test, y_test)
+    log.info(
+        "Model evaluation complete",
+        train_acc=f"{train_acc:.4f}",
+        test_acc=f"{test_acc:.4f}",
+    )
     return train_acc, test_acc
 
 
@@ -59,14 +68,20 @@ def analyze_learning_curves(
     n_runs: int = 5,
     output_path: str | None = None,
 ) -> dict[str, pd.DataFrame]:
-    """
-    Analyze learning curves using a fixed test set for consistent evaluation.
-    """
-    features, labels = load_and_prepare_data(df)
+    """Analyze learning curves using a fixed test set."""
+    logger = log.bind(
+        test_size=test_size,
+        n_runs=n_runs,
+        shapes={"min": min(num_shapes_range), "max": max(num_shapes_range)},
+        depths={"min": min(max_depth_range), "max": max(max_depth_range)},
+    )
+    logger.info("Starting learning curve analysis")
+
+    features, labels = load_and_prepare_data(df, balance_classes=True)
     results = []
 
     for run in range(n_runs):
-        from sklearn.model_selection import train_test_split
+        run_logger = logger.bind(run={"current": run + 1, "total": n_runs})
 
         X_train_full, X_test, y_train_full, y_test = train_test_split(
             features,
@@ -76,74 +91,130 @@ def analyze_learning_curves(
             random_state=42 + run,
         )
 
+        run_stats = {
+            "shapes_evaluated": 0,
+            "trees_trained": 0,
+            "total_samples": len(X_train_full),
+        }
+
+        if run == 0:
+            final_models = {}
+
         for num_shapes in num_shapes_range:
-            log.info("Evaluating sample size", num_shapes=num_shapes)
+            if num_shapes % 5 == 0:
+                run_logger.info(
+                    "Training progress",
+                    samples=min(num_shapes, len(X_train_full)),
+                    progress=f"{run_stats['shapes_evaluated']}/{len(num_shapes_range)} shapes",
+                )
 
             for max_depth in max_depth_range:
                 if num_shapes < len(X_train_full):
-                    X_train = pd.DataFrame()
-                    y_train = pd.Series(dtype=y_train_full.dtype)
-
-                    for label in y_train_full.unique():
-                        mask = y_train_full == label
-                        samples_per_class = max(
-                            1, num_shapes // len(y_train_full.unique())
-                        )
-
-                        X_label = X_train_full[mask]
-                        y_label = y_train_full[mask]
-
-                        if len(X_label) > samples_per_class:
-                            X_sampled, y_sampled = resample(
-                                X_label,
-                                y_label,
-                                n_samples=samples_per_class,
-                                random_state=42 + run,
-                            )
-                            X_train = pd.concat([X_train, X_sampled])
-                            y_train = pd.concat([y_train, y_sampled])
+                    X_train, y_train = resample_balanced_subset(
+                        X_train_full, y_train_full, num_shapes, run
+                    )
                 else:
-                    X_train = X_train_full
-                    y_train = y_train_full
+                    X_train, y_train = X_train_full, y_train_full
 
                 model = DecisionTreeClassifier(
                     max_depth=max_depth, random_state=42 + run
                 )
                 model.fit(X_train, y_train)
 
-                train_acc = model.score(X_train, y_train)
-                test_acc = model.score(X_test, y_test)
+                if run == 0 and num_shapes == num_shapes_range[-1]:
+                    final_models[max_depth] = model
 
-                from sklearn.metrics import f1_score
-                train_f1 = f1_score(y_train, model.predict(X_train), average='weighted')
-                test_f1 = f1_score(y_test, model.predict(X_test), average='weighted')
-
-                if output_path and run == 0:
-                    evaluate_and_save_trees(
-                        model=model,
-                        features=X_train,
-                        labels=y_train,
-                        output_path=output_path,
-                        num_shapes=num_shapes,
-                        max_depth=max_depth,
-                        run=run,
-                    )
+                metrics = calculate_model_metrics(
+                    model, X_train, y_train, X_test, y_test
+                )
 
                 results.append(
                     {
                         "num_shapes": num_shapes,
                         "max_depth": max_depth,
                         "run": run,
-                        "train_acc": train_acc,
-                        "test_acc": test_acc,
-                        "train_f1": train_f1,
-                        "test_f1": test_f1,
+                        **metrics,
                         "train_size": len(X_train),
                         "test_size": len(X_test),
                     }
                 )
 
+                run_stats["trees_trained"] += 1
+            run_stats["shapes_evaluated"] += 1
+
+        if run == 0 and output_path:
+            trees_dir = os.path.dirname(output_path)
+            log.info("Saving final trees", trees_dir=trees_dir)
+
+            for depth, model in final_models.items():
+                tree_path = os.path.join(trees_dir, f"final_tree_depth{depth}")
+                visualize_tree(
+                    model=model,
+                    feature_names=list(X_train.columns),
+                    class_names=list(labels.unique()),
+                    output_file=tree_path,
+                )
+                log.info("Saved tree", depth=depth, path=f"{tree_path}.png")
+
+        run_logger.info(
+            "Run complete",
+            stats={
+                "shapes": run_stats["shapes_evaluated"],
+                "trees": run_stats["trees_trained"],
+                "avg_acc": np.mean(
+                    [r["test_acc"] for r in results[-len(max_depth_range) :]]
+                ),
+            },
+        )
+
+    logger.info(
+        "Analysis complete",
+        total_results=len(results),
+        final_metrics={
+            "mean_test_acc": np.mean([r["test_acc"] for r in results]),
+            "max_test_acc": max([r["test_acc"] for r in results]),
+        },
+    )
+
     return pd.DataFrame(results)
+
+
+def resample_balanced_subset(X_full, y_full, num_samples, seed):
+    """Helper to create balanced sample subset."""
+    X_train = pd.DataFrame()
+    y_train = pd.Series(dtype=y_full.dtype)
+
+    samples_per_class = max(1, num_samples // len(y_full.unique()))
+
+    for label in y_full.unique():
+        mask = y_full == label
+        X_label = X_full[mask]
+        y_label = y_full[mask]
+
+        if len(X_label) > samples_per_class:
+            X_sampled, y_sampled = resample(
+                X_label, y_label, n_samples=samples_per_class, random_state=42 + seed
+            )
+            X_train = pd.concat([X_train, X_sampled])
+            y_train = pd.concat([y_train, y_sampled])
+
+    return X_train, y_train
+
+
+def calculate_model_metrics(model, X_train, y_train, X_test, y_test):
+    """Calculate standard model evaluation metrics."""
+    train_acc = model.score(X_train, y_train)
+    test_acc = model.score(X_test, y_test)
+
+    train_pred = model.predict(X_train)
+    test_pred = model.predict(X_test)
+
+    return {
+        "train_acc": train_acc,
+        "test_acc": test_acc,
+        "train_f1": f1_score(y_train, train_pred, average="weighted"),
+        "test_f1": f1_score(y_test, test_pred, average="weighted"),
+    }
 
 
 def get_output_dir(benchmark_path: str) -> str:
@@ -161,6 +232,9 @@ def plot_metric_curves(
     title: str,
 ):
     """Create learning curve plot for a specific metric with confidence bands."""
+    logger = log.bind(metric=metric, output_path=output_path)
+    logger.info("Plotting learning curves")
+
     sns.set_style("whitegrid")
     fig, ax = plt.subplots(figsize=(12, 8))
 
@@ -169,10 +243,7 @@ def plot_metric_curves(
 
     final_results = (
         results.groupby(["num_shapes", "max_depth"])
-        .agg({
-            f"train_{metric}": ["mean", "std"], 
-            f"test_{metric}": ["mean", "std"]
-        })
+        .agg({f"train_{metric}": ["mean", "std"], f"test_{metric}": ["mean", "std"]})
         .reset_index()
     )
 
@@ -181,7 +252,6 @@ def plot_metric_curves(
         data = final_results[mask]
         color = colors[idx]
 
-        # Plot training curve
         ax.plot(
             data["num_shapes"],
             data[(f"train_{metric}", "mean")],
@@ -197,7 +267,6 @@ def plot_metric_curves(
             color=color,
         )
 
-        # Plot test curve
         ax.plot(
             data["num_shapes"],
             data[(f"test_{metric}", "mean")],
@@ -222,7 +291,7 @@ def plot_metric_curves(
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches="tight")
-    log.info("Saved learning curves plot", path=output_path)
+    logger.info("Learning curves saved")
 
 
 def plot_learning_curves(
@@ -230,7 +299,6 @@ def plot_learning_curves(
     output_path: str,
 ):
     """Create separate plots for accuracy and F1 score metrics."""
-    # Plot accuracy curves
     acc_path = f"{output_path}-accuracy.png"
     plot_metric_curves(
         results=results,
@@ -239,7 +307,6 @@ def plot_learning_curves(
         title="Learning Curves - Accuracy",
     )
 
-    # Plot F1 score curves
     f1_path = f"{output_path}-f1.png"
     plot_metric_curves(
         results=results,
@@ -248,7 +315,6 @@ def plot_learning_curves(
         title="Learning Curves - F1 Score",
     )
 
-    # Save raw data
     results.to_csv(f"{output_path}.csv", index=False)
     log.info("Saved learning curves data", path=f"{output_path}.csv")
 
@@ -282,8 +348,16 @@ def main(
     max_depth_range: list[int],
     n_runs: int,
 ):
+    logger = log.bind(
+        benchmark_path=benchmark_path,
+        shapes_range=f"{min(num_shapes_range)}-{max(num_shapes_range)}",
+        depth_range=f"{min(max_depth_range)}-{max(max_depth_range)}",
+        n_runs=n_runs,
+    )
+
     output_dir = get_output_dir(benchmark_path)
-    log.info("Using output directory", path=output_dir)
+    logger = logger.bind(output_dir=output_dir)
+    logger.info("Starting analysis")
 
     trees_dir = os.path.join(output_dir, "trees")
     os.makedirs(trees_dir, exist_ok=True)
@@ -302,12 +376,11 @@ def main(
     curves_path = os.path.join(output_dir, "learning-curves")
     plot_learning_curves(results, curves_path)
 
-    log.info(
+    logger.info(
         "Analysis complete",
-        output_dir=output_dir,
-        plot=f"{curves_path}.png",
-        data=f"{curves_path}.csv",
-        trees_dir=trees_dir,
+        curves_path=curves_path,
+        plots_generated=2,
+        trees_generated=len(max_depth_range) * len(num_shapes_range),
     )
 
 
