@@ -37,8 +37,8 @@ python benchmark.py --shape-mode random \
     --num-shapes 100 \      # Number of shapes to test
     --max-dim 1024 \        # Maximum dimension size
     --powers-of-two \       # Use power-of-2 dimensions
-    --warmup_ms 10 \        # Warmup duration per matmul
-    --repetition_ms 100     # Measurement duration per matmul
+    --warmup-ms 10 \        # Warmup duration per matmul
+    --repetition-ms 100     # Repetition duration per matmul
 ```
 
 #### 2. Direct Shape Mode
@@ -48,7 +48,22 @@ Test a specific matrix multiplication shape:
 python benchmark.py --shape-mode direct \
     --shape 1024 2048 32 \    # M N K dimensions
     --warmup_ms 10 \          # Warmup duration per matmul
-    --repetition_ms 100       # Measurement duration per matmul
+    --repetition_ms 100       # Total repetition duration
+```
+
+By default, the benchmark uses the same matrices for all repetitions. When `--regenerate-matrices` is enabled, it will generate new matrices from a normal distribution for each test, spreading the `repetition_ms` time across all matrices. Warmup is performed before testing each new matrix. You would need to provide `--num-matrices` argument too.
+
+Example:
+
+```bash
+python benchmark.py --shape-mode random \
+    --num-shapes 100 \ to test
+    --max-dim 1024 \
+    --powers-of-two \
+    --warmup-ms 10 \
+    --repetition-ms 100 \
+    --regenerate-matrices \ # Enable matrix regeneration
+    --num-matrices 5        # Number of different matrices to test
 ```
 
 ### Output Files
@@ -58,5 +73,3 @@ The benchmark generates several files in the `results/benchmarks/` directory:
   - Hardware information
   - Software versions
   - Benchmark results
-- `matmul-benchmark-plot.html`: Interactive performance visualization
-- `matmul-benchmark-plot-normalized.html`: Normalized performance comparison
