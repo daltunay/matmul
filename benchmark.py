@@ -94,7 +94,7 @@ def main(
             ],
             line_arg="backend",
             line_vals=[backend.value for backend in BACKENDS],
-            line_names=[backend.name for backend in BACKENDS],
+            line_names=[backend.name.lower() for backend in BACKENDS],
             args=dict(device=hardware_info["device"]),
             plot_name="matmul",
             xlabel="Matrix Shape",
