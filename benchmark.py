@@ -2,7 +2,6 @@ import argparse
 import os
 import json
 import random
-import sys
 import typing as tp
 import warnings
 from math import log2
@@ -16,7 +15,6 @@ import triton.testing
 
 from implementations import BACKENDS, MatrixBackend
 from implementations.base import DType, DTypeT
-from plot import plot_benchmarks
 from utils import get_hardware_info, get_software_info
 
 warnings.filterwarnings(
@@ -96,7 +94,7 @@ def main(
             line_arg="backend",
             line_vals=BACKENDS.values(),
             line_names=list(BACKENDS.keys()),
-            args=dict(device=get_device()),
+            args=dict(device=hardware_info["hardware.device"]),
             plot_name="matmul",
             xlabel="Matrix Shape",
             ylabel="TFLOPS",
@@ -118,7 +116,7 @@ def main(
             shape=(M, N, K),
             dtype=dtype,
             device=device,
-            device_name=get_device_name(),
+            device_name=hardware_info["hardware.name"],
         )
         logger.info("Starting benchmark case")
 
@@ -176,35 +174,8 @@ def main(
         value_name="time_ms",
     )
 
-    df = df.dropna(subset=["time_ms"])
-
     df["total_ops"] = 2 * df["M"] * df["N"] * df["K"]
-
     df["tflop/s"] = (df["total_ops"] * 1e-12) / (df["time_ms"] * 1e-3)
-
-    df["python_version"] = get_python_version()
-    df["torch_version"] = get_torch_version()
-    df["cuda_version"] = get_cuda_version()
-    df["device_name"] = get_device_name()
-    df["device_count"] = get_device_count()
-
-    df = df[
-        [
-            "device_name",
-            "device_count",
-            "python_version",
-            "torch_version",
-            "cuda_version",
-            "M",
-            "N",
-            "K",
-            "dtype",
-            "backend",
-            "time_ms",
-            "total_ops",
-            "tflop/s",
-        ]
-    ]
 
     print("Benchmark results:", df)
 
@@ -222,13 +193,6 @@ def main(
 
         plot_dir = os.path.dirname(json_path)
         base_name = os.path.splitext(os.path.basename(json_path))[0]
-
-        fig_regular, fig_normalized = plot_benchmarks(df)
-        log.info("Plots generated and saved", dir=os.path.dirname(output_path))
-        fig_regular.write_html(os.path.join(plot_dir, f"{base_name}-plot.html"))
-        fig_normalized.write_html(
-            os.path.join(plot_dir, f"{base_name}-plot-normalized.html")
-        )
 
     logger.info(
         "Benchmark suite complete",
