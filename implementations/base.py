@@ -10,6 +10,13 @@ DTypeT = tp.TypeVar("DTypeT")
 class MatrixBackend(Protocol[T]):
     """Protocol defining the interface for matrix multiplication backends."""
 
+    DTYPE_MAP: tp.ClassVar[dict[DType, tp.Any]] = {
+        "fp8": None,
+        "fp16": None,
+        "fp32": None,
+        "fp64": None,
+    }
+
     @staticmethod
     def generate_matrix(
         rows: int,
@@ -17,7 +24,7 @@ class MatrixBackend(Protocol[T]):
         dtype: DTypeT,
         device: str,
         *args: tp.Any,
-        **kwargs: tp.Any
+        **kwargs: tp.Any,
     ) -> T:
         """Generate a matrix of given shape and type.
 
@@ -45,8 +52,8 @@ class MatrixBackend(Protocol[T]):
         """
         raise NotImplementedError
 
-    @staticmethod
-    def convert_dtype(dtype_str: DType) -> DTypeT | tp.NoReturn:
+    @classmethod
+    def convert_dtype(cls, dtype_str: DType) -> DTypeT | tp.NoReturn:
         """Convert string dtype to backend-specific dtype.
 
         Args:
@@ -58,4 +65,7 @@ class MatrixBackend(Protocol[T]):
         Raises:
             ValueError: If dtype is not supported
         """
-        raise NotImplementedError
+        dtype = cls.DTYPE_MAP[dtype_str]
+        if dtype is None:
+            raise ValueError(f"Unsupported dtype: {dtype_str}")
+        return dtype

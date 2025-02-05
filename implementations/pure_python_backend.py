@@ -7,6 +7,13 @@ from .base import DType, MatrixBackend
 
 
 class PurePythonBackend(MatrixBackend[NDArray]):
+    DTYPE_MAP = {
+        "fp8": None,
+        "fp16": None,
+        "fp32": None,
+        "fp64": float,
+    }
+
     @staticmethod
     def generate_matrix(
         rows: int,
@@ -27,14 +34,9 @@ class PurePythonBackend(MatrixBackend[NDArray]):
                     result[i, j] += a[i, k] * b[k, j]
         return result
 
-    @staticmethod
-    def convert_dtype(dtype_str: DType) -> float | tp.NoReturn:
-        dtype = {
-            "fp8": None,
-            "fp16": None,
-            "fp32": None,
-            "fp64": float,
-        }[dtype_str]
+    @classmethod
+    def convert_dtype(cls, dtype_str: DType) -> float | tp.NoReturn:
+        dtype = cls.DTYPE_MAP[dtype_str]
 
         if not dtype:
             raise ValueError(f"Unsupported dtype: {dtype_str}")

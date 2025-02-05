@@ -6,6 +6,13 @@ from .base import DType, MatrixBackend
 
 
 class TorchBackend(MatrixBackend[torch.Tensor]):
+    DTYPE_MAP = {
+        "fp8": None,
+        "fp16": torch.float16,
+        "fp32": torch.float32,
+        "fp64": torch.float64,
+    }
+
     @staticmethod
     def generate_matrix(
         rows: int,
@@ -21,14 +28,9 @@ class TorchBackend(MatrixBackend[torch.Tensor]):
     def multiply_matrices(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         return torch.matmul(a, b)
 
-    @staticmethod
-    def convert_dtype(dtype_str: DType) -> torch.dtype | tp.NoReturn:
-        dtype = {
-            "fp8": None,
-            "fp16": torch.float16,
-            "fp32": torch.float32,
-            "fp64": torch.float64,
-        }[dtype_str]
+    @classmethod
+    def convert_dtype(cls, dtype_str: DType) -> torch.dtype | tp.NoReturn:
+        dtype = cls.DTYPE_MAP[dtype_str]
 
         if dtype is None:
             raise ValueError(f"Unsupported dtype: {dtype_str}")

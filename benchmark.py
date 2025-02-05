@@ -90,7 +90,7 @@ def main(
             x_vals=[
                 (M, N, K, dtype_str)
                 for (M, N, K) in MATRIX_SHAPES
-                for dtype_str in ["fp8", "fp16", "fp32", "fp64"]
+                for dtype_str in MatrixBackend.DTYPE_MAP.keys()
             ],
             line_arg="backend",
             line_vals=[backend.value for backend in BACKENDS],

@@ -6,6 +6,13 @@ from .base import DType, MatrixBackend
 
 
 class NumpyBackend(MatrixBackend[NDArray]):
+    DTYPE_MAP = {
+        "fp8": None,
+        "fp16": np.float16,
+        "fp32": np.float32,
+        "fp64": np.float64,
+    }
+
     @staticmethod
     def generate_matrix(
         rows: int,
@@ -21,14 +28,9 @@ class NumpyBackend(MatrixBackend[NDArray]):
     def multiply_matrices(a: NDArray, b: NDArray) -> NDArray:
         return np.matmul(a, b)
 
-    @staticmethod
-    def convert_dtype(dtype_str: DType) -> np.dtype | tp.NoReturn:
-        dtype = {
-            "fp8": None,
-            "fp16": np.float16,
-            "fp32": np.float32,
-            "fp64": np.float64,
-        }[dtype_str]
+    @classmethod
+    def convert_dtype(cls, dtype_str: DType) -> np.dtype | tp.NoReturn:
+        dtype = cls.DTYPE_MAP[dtype_str]
 
         if dtype is None:
             raise ValueError(f"Unsupported dtype: {dtype_str}")
