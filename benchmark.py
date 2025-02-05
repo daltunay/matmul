@@ -92,9 +92,10 @@ def main(
     warmup: int,
     rep: int,
     output_path: str | None = None,
+    direct_dims: tuple[int, int, int] | None = None,
 ) -> pd.DataFrame:
     logger = log.bind(
-        shapes=num_shapes,
+        shapes=num_shapes if direct_dims is None else "direct",
         max_dim=max_dim,
         powers_of_two=powers_of_two,
         warmup=warmup,
@@ -105,10 +106,14 @@ def main(
     if not torch.cuda.is_available():
         log.warning("CUDA not available - some backends may be limited")
 
-    MATRIX_SHAPES = generate_random_shapes(
-        num_shapes=num_shapes,
-        max_dim=max_dim,
-        powers_of_two=powers_of_two,
+    MATRIX_SHAPES = (
+        [direct_dims]
+        if direct_dims is not None
+        else generate_random_shapes(
+            num_shapes=num_shapes,
+            max_dim=max_dim,
+            powers_of_two=powers_of_two,
+        )
     )
 
     configs = [
@@ -185,9 +190,9 @@ def main(
             rep=rep,
             grad_to_none=None,
             quantiles=None,
-            fast_flush=True,
+            # fast_flush=True,
             return_mode="median",
-            device_type=device,
+            # device_type=device,
         )
 
         tflops = (2 * M * N * K * 1e-12) / (time_ms * 1e-3)
@@ -263,11 +268,27 @@ def main(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Matrix multiplication benchmark")
-    parser.add_argument(
+    shape_group = parser.add_mutually_exclusive_group()
+    shape_group.add_argument(
         "--num-shapes",
         type=int,
         default=1000,
         help="Number of matrix shapes to generate",
+    )
+    shape_group.add_argument(
+        "--M",
+        type=int,
+        help="Direct M dimension for matrix multiplication",
+    )
+    parser.add_argument(
+        "--N",
+        type=int,
+        help="Direct N dimension for matrix multiplication",
+    )
+    parser.add_argument(
+        "--K",
+        type=int,
+        help="Direct K dimension for matrix multiplication",
     )
     parser.add_argument(
         "--max-dim",
@@ -294,11 +315,19 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    
+    direct_dims = None
+    if args.M is not None:
+        if args.N is None or args.K is None:
+            parser.error("When using direct dimensions, all --M, --N, and --K must be provided")
+        direct_dims = (args.M, args.N, args.K)
+
     main(
         num_shapes=args.num_shapes,
         max_dim=args.max_dim,
         powers_of_two=args.powers_of_two,
         warmup=args.warmup,
         rep=args.rep,
-        output_path="results/latest/benchmarks/matmul-benchmark.csv",
+        output_path="./results/benchmarks/matmul-benchmark.csv",
+        direct_dims=direct_dims,
     )

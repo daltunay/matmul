@@ -19,12 +19,9 @@ source .venv/bin/activate
 
 ### Running Benchmarks
 
-Basic benchmark with default settings:
-```bash
-python benchmark.py
-```
+You can run benchmarks in two modes:
 
-Customized benchmark with specific parameters:
+1. Random Shapes Mode:
 ```bash
 python benchmark.py \
     --num-shapes 100 \  # Number of matrix shapes to test
@@ -32,6 +29,16 @@ python benchmark.py \
     --powers-of-two \   # Use power of 2 dimensions
     --warmup 1 \        # Number of warmup iterations
     --rep 10           # Number of repetitions per test
+```
+
+2. Direct Dimensions Mode:
+```bash
+python benchmark.py \
+    --M 1024 \         # First matrix rows
+    --N 32 \           # Second matrix columns
+    --K 2048 \         # First matrix columns/Second matrix rows
+    --warmup 1 \       # Number of warmup iterations
+    --rep 10          # Number of repetitions per test
 ```
 
 ### Analyzing Results
