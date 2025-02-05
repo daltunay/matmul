@@ -93,8 +93,8 @@ def main(
                 for dtype_str in ["fp8", "fp16", "fp32", "fp64"]
             ],
             line_arg="backend",
-            line_vals=BACKENDS.values(),
-            line_names=list(BACKENDS.keys()),
+            line_vals=[backend.value for backend in BACKENDS],
+            line_names=[backend.name for backend in BACKENDS],
             args=dict(device=hardware_info["device"]),
             plot_name="matmul",
             xlabel="Matrix Shape",
