@@ -89,8 +89,8 @@ def main(
     num_shapes: int,
     max_dim: int,
     powers_of_two: bool,
-    warmup: int,
-    rep: int,
+    warmup_ms: float,
+    repetition_ms: float,
     output_path: str | None = None,
     direct_dims: tuple[int, int, int] | None = None,
 ) -> pd.DataFrame:
@@ -98,8 +98,8 @@ def main(
         shapes=num_shapes if direct_dims is None else "direct",
         max_dim=max_dim,
         powers_of_two=powers_of_two,
-        warmup=warmup,
-        repetitions=rep,
+        warmup_ms=warmup_ms,
+        repetitions=repetition_ms,
     )
     logger.info("Starting benchmark suite")
 
@@ -186,13 +186,11 @@ def main(
 
         time_ms = triton.testing.do_bench(
             fn=safe_matmul,
-            warmup=warmup,
-            rep=rep,
+            warmup=warmup_ms,
+            rep=repetition_ms,
             grad_to_none=None,
             quantiles=None,
-            # fast_flush=True,
             return_mode="median",
-            # device_type=device,
         )
 
         tflops = (2 * M * N * K * 1e-12) / (time_ms * 1e-3)
@@ -302,14 +300,14 @@ if __name__ == "__main__":
         help="Generate matrix shapes with powers of two",
     )
     parser.add_argument(
-        "--warmup",
-        type=int,
+        "--warmup_ms",
+        type=float,
         default=1,
-        help="Number of warmup iterations per benchmark",
+        help="Number of warmup_ms iterations per benchmark",
     )
     parser.add_argument(
-        "--rep",
-        type=int,
+        "--repetition_ms",
+        type=float,
         default=10,
         help="Number of benchmark repetitions",
     )
@@ -326,8 +324,8 @@ if __name__ == "__main__":
         num_shapes=args.num_shapes,
         max_dim=args.max_dim,
         powers_of_two=args.powers_of_two,
-        warmup=args.warmup,
-        rep=args.rep,
+        warmup_ms=args.warmup_ms,
+        repetition_ms=args.repetition_ms,
         output_path="./results/benchmarks/matmul-benchmark.csv",
         direct_dims=direct_dims,
     )

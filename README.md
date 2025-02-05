@@ -27,8 +27,8 @@ python benchmark.py \
     --num-shapes 100 \  # Number of matrix shapes to test
     --max-dim 1024 \    # Maximum matrix dimension
     --powers-of-two \   # Use power of 2 dimensions
-    --warmup 1 \        # Number of warmup iterations
-    --rep 10           # Number of repetitions per test
+    --warmup_ms 1 \     # Warmup time (ms) for each matmul
+    --repetition_ms 10  # Repetition time (ms) for each matmul
 ```
 
 2. Direct Dimensions Mode:
@@ -37,8 +37,8 @@ python benchmark.py \
     --M 1024 \         # First matrix rows
     --N 32 \           # Second matrix columns
     --K 2048 \         # First matrix columns/Second matrix rows
-    --warmup 1 \       # Number of warmup iterations
-    --rep 10          # Number of repetitions per test
+    --warmup_ms 1 \    # 
+    --repetition_ms 10 #
 ```
 
 ### Analyzing Results
