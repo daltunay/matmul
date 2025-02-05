@@ -1,5 +1,6 @@
 import argparse
 import os
+import json
 import random
 import sys
 import typing as tp
@@ -16,6 +17,7 @@ import triton.testing
 from implementations import BACKENDS, MatrixBackend
 from implementations.base import DType, DTypeT
 from plot import plot_benchmarks
+from utils import get_hardware_info, get_software_info
 
 warnings.filterwarnings(
     "ignore",
@@ -49,42 +51,6 @@ def generate_random_shapes(
     return sorted(list(shapes))
 
 
-def get_device() -> str:
-    if torch.cuda.is_available():
-        return "cuda"
-    return "cpu"
-
-
-def get_device_name() -> str:
-    if torch.cuda.is_available():
-        return torch.cuda.get_device_name()
-    return "CPU"
-
-
-def get_device_count() -> int:
-    if torch.cuda.is_available():
-        return torch.cuda.device_count()
-    return 1
-
-
-def get_python_version() -> str:
-    return f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-
-
-def get_torch_version() -> str:
-    return torch.__version__
-
-
-def get_cuda_version() -> str:
-    if torch.cuda.is_available():
-        return torch.version.cuda
-    return "N/A"
-
-
-def get_triton_version() -> str:
-    return triton.__version__
-
-
 def main(
     num_shapes: int,
     max_dim: int,
@@ -102,6 +68,9 @@ def main(
         repetitions=repetition_ms,
     )
     logger.info("Starting benchmark suite")
+
+    hardware_info = get_hardware_info()
+    software_info = get_software_info()
 
     if not torch.cuda.is_available():
         log.warning("CUDA not available - some backends may be limited")
@@ -239,12 +208,20 @@ def main(
 
     print("Benchmark results:", df)
 
-    if output_path:
-        df.to_csv(output_path)
-        log.info("Results saved", path=output_path)
+    benchmark_data = {
+        **hardware_info,
+        **software_info,
+        "benchmarks": df.to_dict(orient="records")
+    }
 
-        plot_dir = os.path.dirname(output_path)
-        base_name = os.path.splitext(os.path.basename(output_path))[0]
+    if output_path:
+        json_path = os.path.splitext(output_path)[0] + ".json"
+        with open(json_path, 'w') as f:
+            json.dump(benchmark_data, f, indent=2)
+        log.info("Results saved", path=json_path)
+
+        plot_dir = os.path.dirname(json_path)
+        base_name = os.path.splitext(os.path.basename(json_path))[0]
 
         fig_regular, fig_normalized = plot_benchmarks(df)
         log.info("Plots generated and saved", dir=os.path.dirname(output_path))
@@ -264,41 +241,46 @@ def main(
     return df
 
 
-if __name__ == "__main__":
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Matrix multiplication benchmark")
-    shape_group = parser.add_mutually_exclusive_group()
-    shape_group.add_argument(
+    
+    # Shape configuration
+    parser.add_argument(
+        "--shape-mode",
+        choices=["random", "direct"],
+        default="random",
+        help="Mode for matrix shapes: 'random' for multiple random shapes or 'direct' for a single shape",
+    )
+    
+    # Random shape mode arguments
+    parser.add_argument(
         "--num-shapes",
         type=int,
         default=1000,
-        help="Number of matrix shapes to generate",
-    )
-    shape_group.add_argument(
-        "--M",
-        type=int,
-        help="Direct M dimension for matrix multiplication",
-    )
-    parser.add_argument(
-        "--N",
-        type=int,
-        help="Direct N dimension for matrix multiplication",
-    )
-    parser.add_argument(
-        "--K",
-        type=int,
-        help="Direct K dimension for matrix multiplication",
+        help="[Random mode] Number of matrix shapes to generate",
     )
     parser.add_argument(
         "--max-dim",
         type=int,
         default=2**10,
-        help="Maximum matrix dimension",
+        help="[Random mode] Maximum matrix dimension",
     )
     parser.add_argument(
         "--powers-of-two",
         action="store_true",
-        help="Generate matrix shapes with powers of two",
+        help="[Random mode] Generate matrix shapes with powers of two",
     )
+    
+    # Direct shape mode arguments
+    parser.add_argument(
+        "--shape",
+        type=int,
+        nargs=3,
+        metavar=('M', 'N', 'K'),
+        help="[Direct mode] Matrix dimensions as 'M N K'",
+    )
+    
+    # Common arguments
     parser.add_argument(
         "--warmup_ms",
         type=float,
@@ -311,21 +293,28 @@ if __name__ == "__main__":
         default=10,
         help="Number of benchmark repetitions",
     )
-
+    
     args = parser.parse_args()
     
-    direct_dims = None
-    if args.M is not None:
-        if args.N is None or args.K is None:
-            parser.error("When using direct dimensions, all --M, --N, and --K must be provided")
-        direct_dims = (args.M, args.N, args.K)
+    # Validate arguments based on mode
+    if args.shape_mode == "direct" and args.shape is None:
+        parser.error("Direct mode requires --shape M N K")
+    if args.shape_mode == "random" and args.shape is not None:
+        parser.error("Random mode does not accept --shape argument")
+    
+    return args
 
+if __name__ == "__main__":
+    args = parse_args()
+    
+    direct_dims = tuple(args.shape) if args.shape_mode == "direct" else None
+    
     main(
-        num_shapes=args.num_shapes,
+        num_shapes=args.num_shapes if args.shape_mode == "random" else 1,
         max_dim=args.max_dim,
         powers_of_two=args.powers_of_two,
         warmup_ms=args.warmup_ms,
         repetition_ms=args.repetition_ms,
-        output_path="./results/benchmarks/matmul-benchmark.csv",
+        output_path="./results/benchmarks/matmul-benchmark.json",
         direct_dims=direct_dims,
     )
