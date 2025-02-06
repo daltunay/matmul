@@ -11,7 +11,7 @@ class BACKENDS(Enum):
     # NUMPY = NumpyBackend
     # PURE_PYTHON = PurePythonBackend
     TORCH = TorchBackend
-    TRITON = TritonBackend
+    # TRITON = TritonBackend
 
 
 __all__ = ["MatrixBackend", "BACKENDS"]

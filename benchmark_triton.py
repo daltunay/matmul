@@ -313,7 +313,7 @@ if __name__ == "__main__":
         powers_of_two=args.powers_of_two,
         warmup_ms=args.warmup_ms,
         repetition_ms=args.repetition_ms,
-        output_path="./results/matmul-benchmark.json",
+        output_path="./results/triton/matmul-benchmark.json",
         direct_dims=direct_dims,
         regenerate_matrices=args.regenerate_matrices,
         num_matrices=args.num_matrices,
